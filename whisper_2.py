@@ -18,7 +18,7 @@ def load_audio(file_path):
         file_path: Path to audio file
         
     Returns:
-        Mono channel audio array at 16kHz sample rate
+        Dict containing audio array and sampling rate
     """
     # Load audio file and convert to mono
     audio, sr = librosa.load(file_path, sr=16000, mono=True)
@@ -27,7 +27,7 @@ def load_audio(file_path):
     if len(audio.shape) > 1:
         audio = audio.mean(axis=1)  # Convert stereo to mono by averaging channels
         
-    return audio
+    return {"array": audio, "sampling_rate": sr}
 
 
 def chunked_iterable(iterable, batch_size=64):
@@ -186,7 +186,7 @@ def transcribe_all_in_one(input_folder: str, output_folder: str):
     pipeline = FlaxWhisperPipline(
         "openai/whisper-large-v2",
         dtype=jnp.bfloat16,
-        batch_size=64,
+        batch_size=32,
     )
 
     # Configure sharding
@@ -208,27 +208,50 @@ def transcribe_all_in_one(input_folder: str, output_folder: str):
     # 3) Warm-up compilation
     print("Warming up pipeline...")
     dummy_file = mp3_paths[0]
-    _ = pipeline(load_audio(dummy_file))
+    dummy_audio = load_audio(dummy_file)
+    _ = pipeline(dummy_audio)
 
     # 4) Process files in batches
     total_audio_duration = 0
     start_time = time.time()
     all_outputs = []
     
-    for i, batch_paths in enumerate(chunked_iterable(mp3_paths, 64)):
-        print(f"Processing batch {i+1} with {len(batch_paths)} files...")
-        # Load and preprocess audio files in batch
-        batch_audio = [load_audio(path) for path in batch_paths]
+    for i, batch_paths in enumerate(chunked_iterable(mp3_paths, 32)):
+        max_retries = 3
+        retry_count = 0
         
-        # Pad sequences to same length
-        max_length = max(audio.shape[0] for audio in batch_audio)
-        batch_audio_padded = np.array([
-            np.pad(audio, (0, max_length - audio.shape[0])) 
-            for audio in batch_audio
-        ])
-        
-        batch_outputs = pipeline(batch_audio_padded)
-        all_outputs.extend(batch_outputs)
+        while retry_count < max_retries:
+            try:
+                print(f"Processing batch {i+1} with {len(batch_paths)} files...")
+                batch_audio = [load_audio(path)["array"] for path in batch_paths]
+                
+                # Pad sequences to same length
+                max_length = max(audio.shape[0] for audio in batch_audio)
+                batch_audio_padded = np.array([
+                    np.pad(audio, (0, max_length - audio.shape[0])) 
+                    for audio in batch_audio
+                ])
+                
+                batch_input = {
+                    "array": batch_audio_padded,
+                    "sampling_rate": 16000
+                }
+                
+                batch_outputs = pipeline(batch_input)
+                all_outputs.extend(batch_outputs)
+                break  # 성공하면 while 루프 탈출
+                
+            except Exception as e:
+                retry_count += 1
+                print(f"Error processing batch {i+1}: {str(e)}")
+                print(f"Retry {retry_count} of {max_retries}")
+                time.sleep(5)  # 5초 대기 후 재시도
+                
+        if retry_count == max_retries:
+            print(f"Failed to process batch {i+1} after {max_retries} retries")
+            # 실패한 배치 정보 저장
+            with open(os.path.join(output_folder, "failed_batches.txt"), "a") as f:
+                f.write(f"Batch {i+1}: {batch_paths}\n")
 
     total_processing_time = time.time() - start_time
     print(f"Processed {len(mp3_paths)} files in {total_processing_time:.2f}s")
