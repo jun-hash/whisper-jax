@@ -3,6 +3,13 @@ import json
 import jax
 import jax.numpy as jnp
 from whisper_jax import FlaxWhisperPipline
+import argparse
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--input-dir", default="/mnt/data/v12")
+    parser.add_argument("--output-dir", default="/mnt/data/v12/output")
+    return parser.parse_args()
 
 def transcribe_folder(
     input_folder: str,
@@ -87,16 +94,10 @@ def transcribe_folder(
         print(f" -> Saved JSON to: {output_path}")
 
 if __name__ == "__main__":
-    # Example usage
-    INPUT_FOLDER = "/mnt/data/v12"   # all your 15-30s MP3s here
-    OUTPUT_FOLDER = "./output"
-    
-    # Create output directory if it doesn't exist
-    os.makedirs(OUTPUT_FOLDER, exist_ok=True)
-    
+    args = parse_args()
     transcribe_folder(
-        input_folder=INPUT_FOLDER,
-        output_folder=OUTPUT_FOLDER,
+        input_folder=args.input_dir,
+        output_folder=args.output_dir,
         model_id="openai/whisper-large-v2",
         dtype=jnp.bfloat16,    
         batch_size=64,         # 증가된 배치 사이즈
