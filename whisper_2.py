@@ -232,9 +232,15 @@ def transcribe_all_in_one(input_folder: str, output_folder: str):
                 
                 for audio_path in batch_paths:
                     audio_data = load_audio(audio_path)
-                    batch_audio_data.append(audio_data["array"])
+                    audio_array = audio_data["array"]
+                    
+                    # Ensure audio is mono (single channel)
+                    if len(audio_array.shape) > 1:
+                        audio_array = audio_array.mean(axis=1)
+                    
+                    batch_audio_data.append(audio_array)
                     batch_durations.append(audio_data["duration"])
-                    max_length = max(max_length, len(audio_data["array"]))
+                    max_length = max(max_length, len(audio_array))
                 
                 # Pad all audio arrays to same length
                 padded_audio = []
@@ -243,10 +249,15 @@ def transcribe_all_in_one(input_folder: str, output_folder: str):
                     padded = np.pad(audio, (0, padding_length))
                     padded_audio.append(padded)
                 
-                # Convert to numpy array and create batch input
+                # Stack arrays and ensure shape is correct
+                batch_array = np.stack(padded_audio)
+                if len(batch_array.shape) != 2:  # Should be (batch_size, sequence_length)
+                    raise ValueError(f"Unexpected audio shape: {batch_array.shape}")
+                
+                # Create batch input
                 batch_input = {
-                    "array": np.array(padded_audio),
-                    "sampling_rate": 16000
+                    "array": batch_array,
+                    "sampling_rate": 16000  # Whisper expects 16kHz
                 }
                 
                 # Process batch
