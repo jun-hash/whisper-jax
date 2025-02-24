@@ -9,7 +9,7 @@ AUDIO_DIR="/mnt/diskaudio/local_audio"
 OUTPUT_DIR="/mnt/diskaudio/local_output"
 LOG_FILE="/mnt/diskaudio/chunk_test_$(date +%Y%m%d_%H%M%S).log"
 
-mkdir -p "$AUDIO_DIR" "$OUTPUT_DIR"
+sudo mkdir -p "$AUDIO_DIR" "$OUTPUT_DIR"
 
 # (임시) 이번에는 "테스트"이므로, v12 폴더의 mp3 중 5%만
 # 실제로는 "파일 리스트"를 만들어서 부분만 다운 or 폴더를 쪼개는 방식을 써야 함.
