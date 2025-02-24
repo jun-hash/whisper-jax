@@ -17,7 +17,7 @@ echo "Starting Whisper TPU job with model ${MODEL_NAME}" | tee "$LOG_FILE"
 start_time=$(date +%s)
 
 # 3. Whisper TPU 작업 실행 (whisper_jax_infer.py 경로는 실제 위치로 수정)
-python3 /path/to/whisper_jax_infer.py "$MODEL_NAME" "$INPUT_DIR" "$OUTPUT_DIR" 2>&1 | tee -a "$LOG_FILE"
+python3 whisper_jax_infer.py "$MODEL_NAME" "$INPUT_DIR" "$OUTPUT_DIR" 2>&1 | tee -a "$LOG_FILE"
 
 end_time=$(date +%s)
 echo "Total job time: $((end_time - start_time)) seconds" | tee -a "$LOG_FILE"
