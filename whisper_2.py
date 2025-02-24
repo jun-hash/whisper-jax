@@ -7,8 +7,10 @@ import argparse
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input-dir", default="/mnt/data/v12")
-    parser.add_argument("--output-dir", default="/mnt/data/v12/output")
+    parser.add_argument("--input-dir", 
+                       default=os.path.abspath("/mnt/data/v12"))
+    parser.add_argument("--output-dir",
+                       default="./output")
     return parser.parse_args()
 
 def transcribe_folder(
