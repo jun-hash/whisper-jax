@@ -30,7 +30,7 @@ def load_audio(file_path):
     return {"array": audio, "sampling_rate": sr}
 
 
-def chunked_iterable(iterable, batch_size=64):
+def chunked_iterable(iterable, batch_size=32):
     it = iter(iterable)
     while True:
         chunk = list(islice(it, batch_size))
