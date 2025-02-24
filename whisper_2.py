@@ -62,6 +62,7 @@ def transcribe_folder(
 
     # 5. Transcribe each MP3 in the folder
     mp3_files = [f for f in os.listdir(input_folder) if f.endswith(".mp3")]
+    print(f"mp3_files[0]: {mp3_files[0]}")
     mp3_files.sort()
 
     for idx, mp3_file in enumerate(mp3_files, 1):
@@ -74,8 +75,7 @@ def transcribe_folder(
             print(f"Skipping {mp3_file} because {output_filename} already exists.")
             continue
 
-        print(f"[{idx}/{len(mp3_files)}] Transcribing {mp3_file} ...")
-        
+        print(f"[{idx}/{len(mp3_files)}] Transcribing {mp3_file} ...")        
         outputs = pipeline(input_path, task=task, return_timestamps=return_timestamps)
         text = outputs["text"]
         chunks = outputs["chunks"]
