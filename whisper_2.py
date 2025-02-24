@@ -8,7 +8,7 @@ import argparse
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--input-dir", 
-                       default=os.path.abspath("/mnt/data/v12"))
+                       default=os.path.abspath("/mnt/data/v12/v12"))
     parser.add_argument("--output-dir",
                        default="./output")
     return parser.parse_args()
