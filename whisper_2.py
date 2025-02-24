@@ -137,7 +137,14 @@ def transcribe_folder(
     with open(log_file, "a", encoding="utf-8") as f:
         f.write(final_stats)
 
-def transcribe_all_in_one(input_folder: str):
+def transcribe_all_in_one(input_folder: str, output_folder: str):
+    """Transcribe all MP3 files in input_folder and save results to output_folder."""
+    # Create output directory
+    os.makedirs(output_folder, exist_ok=True)
+    
+    # Create log file
+    log_file = os.path.join(output_folder, f"transcription_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
+    
     # 1) mp3 파일 경로 리스트 만들기
     mp3_paths = [
         os.path.join(input_folder, f) 
@@ -182,22 +189,61 @@ def transcribe_all_in_one(input_folder: str):
     print(f"Total files: {len(mp3_paths)}")
     print(f"Total transcription time: {total_time:.2f} s")
 
-    # outputs는 mp3_paths와 같은 길이의 리스트가 됨
-    # 각 요소가 {"text": ..., "chunks": ...} 형태
-    # 필요하면 여기서 결과 저장
-    for path, out in zip(mp3_paths, outputs):
-        print(path, out["text"][:50], "...")
+    total_audio_duration = 0
+    start_time = time.time()
+    outputs = pipeline(mp3_paths)
+    total_processing_time = time.time() - start_time
 
+    # Save results and log statistics
+    for mp3_path, output in zip(mp3_paths, outputs):
+        mp3_file = os.path.basename(mp3_path)
+        output_filename = os.path.splitext(mp3_file)[0] + ".json"
+        output_path = os.path.join(output_folder, output_filename)
+
+        # Get audio duration
+        audio_duration = librosa.get_duration(path=mp3_path)
+        total_audio_duration += audio_duration
+
+        # Prepare result JSON
+        result = {
+            "file_name": mp3_file,
+            "text": output["text"],
+            "chunks": output["chunks"],
+            "audio_duration": audio_duration,
+            "processing_time": total_processing_time / len(mp3_paths),  # Approximate per-file processing time
+            "realtime_factor": (total_processing_time / len(mp3_paths)) / audio_duration
+        }
+
+        # Save to JSON
+        with open(output_path, "w", encoding="utf-8") as f:
+            json.dump(result, f, ensure_ascii=False, indent=2)
+
+        # Log processing statistics
+        log_message = (
+            f"File: {mp3_file}\n"
+            f"Audio Duration: {audio_duration:.2f}s\n"
+            f"Processing Time: {total_processing_time/len(mp3_paths):.2f}s\n"
+            f"Realtime Factor: {(total_processing_time/len(mp3_paths))/audio_duration:.2f}x\n"
+            f"----------------------------------------\n"
+        )
+        print(log_message)
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(log_message)
+
+    # Log final statistics
+    final_stats = (
+        f"\nFinal Statistics:\n"
+        f"Total Audio Duration: {total_audio_duration:.2f}s\n"
+        f"Total Processing Time: {total_processing_time:.2f}s\n"
+        f"Average Realtime Factor: {total_processing_time/total_audio_duration:.2f}x\n"
+    )
+    print(final_stats)
+    with open(log_file, "a", encoding="utf-8") as f:
+        f.write(final_stats)
 
 if __name__ == "__main__":
     args = parse_args()
     transcribe_all_in_one(
         input_folder=args.input_dir,
-        output_folder=args.output_dir,
-        model_id="openai/whisper-large-v2",
-        dtype=jnp.bfloat16,    
-        batch_size=64,         # 증가된 배치 사이즈
-        shard_params=True,     
-        task="transcribe",     
-        return_timestamps=True  
+        output_folder=args.output_dir
     )
