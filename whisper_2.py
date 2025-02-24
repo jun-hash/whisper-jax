@@ -28,8 +28,18 @@ def transcribe_folder(
 
     # 2. Optimized sharding configuration for TPU v3-8
     if shard_params:
+        # TPU 메시 구성 최적화
+        devices = jax.devices()
+        n_devices = len(devices)
+        
+        # 메시 차원 계산 (예: 8개 코어인 경우 2x4 메시)
+        mesh_shape = (2, n_devices // 2)
+        device_mesh = jax.device_mesh(
+            jax.numpy.array(devices).reshape(*mesh_shape)
+        )
+
         logical_axis_rules_dp = (
-            ("batch", "data"),      # 배치 차원을 8개 코어에 분산
+            ("batch", "data"),
             ("mlp", None),
             ("heads", None),
             ("vocab", None),
@@ -41,8 +51,13 @@ def transcribe_folder(
             ("num_mel", None),
             ("channels", None),
         )
-        # num_mp_partitions=1은 순수 데이터 병렬처리를 위한 설정
-        pipeline.shard_params(num_mp_partitions=1, logical_axis_rules=logical_axis_rules_dp)
+
+        # 메시 컨텍스트 설정
+        with jax.experimental.mesh(device_mesh):
+            pipeline.shard_params(
+                num_mp_partitions=1,
+                logical_axis_rules=logical_axis_rules_dp
+            )
 
     # 3. Make sure output folder exists
     os.makedirs(output_folder, exist_ok=True)
@@ -90,7 +105,7 @@ def transcribe_folder(
 if __name__ == "__main__":
     # Example usage
     INPUT_FOLDER = "/mnt/data/v12"   # all your 15-30s MP3s here
-    OUTPUT_FOLDER = "/mnt/data/v12/output"
+    OUTPUT_FOLDER = "/output"
     
     transcribe_folder(
         input_folder=INPUT_FOLDER,
