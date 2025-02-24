@@ -18,16 +18,23 @@ def load_audio(file_path):
         file_path: Path to audio file
         
     Returns:
-        Dict containing audio array and sampling rate
+        Dict containing audio array, sampling rate, and duration
     """
     # Load audio file and convert to mono
     audio, sr = librosa.load(file_path, sr=16000, mono=True)
     
     # Ensure audio is 1D (mono)
     if len(audio.shape) > 1:
-        audio = audio.mean(axis=1)  # Convert stereo to mono by averaging channels
+        audio = audio.mean(axis=1)
         
-    return {"array": audio, "sampling_rate": sr}
+    # Calculate duration from loaded audio
+    duration = len(audio) / sr
+    
+    return {
+        "array": audio, 
+        "sampling_rate": sr,
+        "duration": duration
+    }
 
 
 def chunked_iterable(iterable, batch_size=32):
@@ -215,6 +222,7 @@ def transcribe_all_in_one(input_folder: str, output_folder: str):
     total_audio_duration = 0
     start_time = time.time()
     all_outputs = []
+    audio_durations = {}  # Store durations for each file
     
     for i, batch_paths in enumerate(chunked_iterable(mp3_paths, 32)):
         max_retries = 3
@@ -223,7 +231,13 @@ def transcribe_all_in_one(input_folder: str, output_folder: str):
         while retry_count < max_retries:
             try:
                 print(f"Processing batch {i+1} with {len(batch_paths)} files...")
-                batch_audio = [load_audio(path)["array"] for path in batch_paths]
+                # Load audio and store durations
+                batch_data = [load_audio(path) for path in batch_paths]
+                batch_audio = [data["array"] for data in batch_data]
+                
+                # Store durations for each file in this batch
+                for path, data in zip(batch_paths, batch_data):
+                    audio_durations[path] = data["duration"]
                 
                 # Pad sequences to same length
                 max_length = max(audio.shape[0] for audio in batch_audio)
@@ -239,17 +253,16 @@ def transcribe_all_in_one(input_folder: str, output_folder: str):
                 
                 batch_outputs = pipeline(batch_input)
                 all_outputs.extend(batch_outputs)
-                break  # 성공하면 while 루프 탈출
+                break
                 
             except Exception as e:
                 retry_count += 1
                 print(f"Error processing batch {i+1}: {str(e)}")
                 print(f"Retry {retry_count} of {max_retries}")
-                time.sleep(5)  # 5초 대기 후 재시도
+                time.sleep(5)
                 
         if retry_count == max_retries:
             print(f"Failed to process batch {i+1} after {max_retries} retries")
-            # 실패한 배치 정보 저장
             with open(os.path.join(output_folder, "failed_batches.txt"), "a") as f:
                 f.write(f"Batch {i+1}: {batch_paths}\n")
 
@@ -262,8 +275,8 @@ def transcribe_all_in_one(input_folder: str, output_folder: str):
         output_filename = os.path.splitext(mp3_file)[0] + ".json"
         output_path = os.path.join(output_folder, output_filename)
 
-        # Get audio duration
-        audio_duration = librosa.get_duration(path=mp3_path)
+        # Use stored duration instead of reloading audio
+        audio_duration = audio_durations[mp3_path]
         total_audio_duration += audio_duration
 
         # Prepare result JSON
@@ -272,7 +285,7 @@ def transcribe_all_in_one(input_folder: str, output_folder: str):
             "text": output["text"],
             "chunks": output["chunks"],
             "audio_duration": audio_duration,
-            "processing_time": total_processing_time / len(mp3_paths),  # Average per-file processing time
+            "processing_time": total_processing_time / len(mp3_paths),
             "realtime_factor": (total_processing_time / len(mp3_paths)) / audio_duration
         }
 

@@ -7,7 +7,6 @@ echo "============================================"
 pip install git+https://github.com/sanchit-gandhi/whisper-jax.git \
             google-cloud-storage \
             librosa \
-            jax
 
 echo "============================================"
 echo "2. Checking and installing ffmpeg if needed..."
@@ -52,3 +51,6 @@ sudo chown -R "$(whoami)":"$(whoami)" "$MOUNT_POINT"
 echo "============================================"
 echo "Setup completed successfully."
 echo "============================================"
+
+
+sed -i 's/NamedShape/DShapedArray/g' ~/.local/lib/python3.10/site-packages/whisper_jax/layers.py
