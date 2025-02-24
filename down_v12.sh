@@ -5,7 +5,7 @@ BUCKET_NAME="nari-librivox"
 FOLDER_PATH="v12"
 DEST_DIR="/mnt/data/v12"
 
-mkdir -p "$DEST_DIR"
+sudo mkdir -p "$DEST_DIR"
 echo "Downloading data from gs://$BUCKET_NAME/$FOLDER_PATH/ to $DEST_DIR ..."
 gsutil -m cp -r "gs://$BUCKET_NAME/$FOLDER_PATH/" "$DEST_DIR"
 echo "Download complete."
