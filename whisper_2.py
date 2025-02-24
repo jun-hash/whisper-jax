@@ -173,7 +173,7 @@ def transcribe_all_in_one(input_folder: str, output_folder: str):
         ("num_mel", None),
         ("channels", None),
     )
-    pipeline.shard_params(num_shards=8, logical_axis_rules=logical_axis_rules_dp)
+    pipeline.shard_params(num_mp_partitions=8, logical_axis_rules=logical_axis_rules_dp)
 
     # 3) Warm-up (컴파일)
     dummy_file = mp3_paths[0]  # 혹은 실제로 아주 짧은 파일을 따로 준비
