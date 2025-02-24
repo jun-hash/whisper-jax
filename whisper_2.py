@@ -62,7 +62,7 @@ def transcribe_folder(
 
     # 5. Transcribe each MP3 in the folder
     mp3_files = [f for f in os.listdir(input_folder) if f.endswith(".mp3")]
-    print(f"mp3_files[0]: {mp3_files[0]}")
+    print(f"mp3_files[0]: {mp3_files}")
     mp3_files.sort()
 
     for idx, mp3_file in enumerate(mp3_files, 1):
