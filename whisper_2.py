@@ -89,7 +89,10 @@ def transcribe_folder(
 if __name__ == "__main__":
     # Example usage
     INPUT_FOLDER = "/mnt/data/v12"   # all your 15-30s MP3s here
-    OUTPUT_FOLDER = "/output"
+    OUTPUT_FOLDER = "./output"
+    
+    # Create output directory if it doesn't exist
+    os.makedirs(OUTPUT_FOLDER, exist_ok=True)
     
     transcribe_folder(
         input_folder=INPUT_FOLDER,
