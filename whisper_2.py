@@ -4,11 +4,17 @@ import jax
 import jax.numpy as jnp
 import time
 import librosa
+import numpy as np
 from whisper_jax import FlaxWhisperPipline
 import argparse
 from datetime import datetime
 from itertools import islice
 
+
+def load_audio(file_path):
+    """Load and preprocess audio file."""
+    audio, sr = librosa.load(file_path, sr=16000)
+    return audio
 
 
 def chunked_iterable(iterable, batch_size=64):
@@ -189,16 +195,26 @@ def transcribe_all_in_one(input_folder: str, output_folder: str):
     # 3) Warm-up compilation
     print("Warming up pipeline...")
     dummy_file = mp3_paths[0]
-    _ = pipeline(dummy_file)
+    _ = pipeline(load_audio(dummy_file))
 
     # 4) Process files in batches
     total_audio_duration = 0
     start_time = time.time()
     all_outputs = []
     
-    for i, batch in enumerate(chunked_iterable(mp3_paths, 64)):
-        print(f"Processing batch {i+1} with {len(batch)} files...")
-        batch_outputs = pipeline(batch)
+    for i, batch_paths in enumerate(chunked_iterable(mp3_paths, 64)):
+        print(f"Processing batch {i+1} with {len(batch_paths)} files...")
+        # Load and preprocess audio files in batch
+        batch_audio = [load_audio(path) for path in batch_paths]
+        
+        # Pad sequences to same length
+        max_length = max(audio.shape[0] for audio in batch_audio)
+        batch_audio_padded = np.array([
+            np.pad(audio, (0, max_length - audio.shape[0])) 
+            for audio in batch_audio
+        ])
+        
+        batch_outputs = pipeline(batch_audio_padded)
         all_outputs.extend(batch_outputs)
 
     total_processing_time = time.time() - start_time
