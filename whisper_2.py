@@ -246,12 +246,12 @@ def transcribe_all_in_one(input_folder: str, output_folder: str):
                     for audio in batch_audio
                 ])
                 
-                batch_input = {
-                    "array": batch_audio_padded,
-                    "sampling_rate": 16000
-                }
+                batch_inputs = [
+                    {"array": audio_padded, "sampling_rate": 44100}
+                    for audio_padded in batch_audio_padded
+                ]
                 
-                batch_outputs = pipeline(batch_input)
+                batch_outputs = pipeline(batch_inputs)
                 all_outputs.extend(batch_outputs)
                 break
                 
