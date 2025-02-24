@@ -137,9 +137,61 @@ def transcribe_folder(
     with open(log_file, "a", encoding="utf-8") as f:
         f.write(final_stats)
 
+def transcribe_all_in_one(input_folder: str):
+    # 1) mp3 파일 경로 리스트 만들기
+    mp3_paths = [
+        os.path.join(input_folder, f) 
+        for f in os.listdir(input_folder) if f.endswith(".mp3")
+    ]
+    mp3_paths.sort()
+
+    # 2) Whisper JAX 파이프라인 초기화
+    pipeline = FlaxWhisperPipline(
+        model_id="openai/whisper-large-v2",
+        dtype=jnp.bfloat16,
+        batch_size=64,         # 한 번에 64개의 chunk를 병렬 처리
+        chunk_length_s=30,     # 기본 30초
+        # 필요에 따라, return_timestamps=False로 하면 조금 더 빠름
+    )
+
+    # 샤딩
+    logical_axis_rules_dp = (
+        ("batch", "data"),
+        ("mlp", None),
+        ("heads", None),
+        ("vocab", None),
+        ("embed", None),
+        ("embed", None),
+        ("joined_kv", None),
+        ("kv", None),
+        ("length", None),
+        ("num_mel", None),
+        ("channels", None),
+    )
+    pipeline.shard_params(num_shards=8, logical_axis_rules=logical_axis_rules_dp)
+
+    # 3) Warm-up (컴파일)
+    dummy_file = mp3_paths[0]  # 혹은 실제로 아주 짧은 파일을 따로 준비
+    _ = pipeline(dummy_file)
+
+    # 4) 한 번에 전체 파일을 파이프라인에 입력
+    start_time = time.time()
+    outputs = pipeline(mp3_paths)  
+    total_time = time.time() - start_time
+
+    print(f"Total files: {len(mp3_paths)}")
+    print(f"Total transcription time: {total_time:.2f} s")
+
+    # outputs는 mp3_paths와 같은 길이의 리스트가 됨
+    # 각 요소가 {"text": ..., "chunks": ...} 형태
+    # 필요하면 여기서 결과 저장
+    for path, out in zip(mp3_paths, outputs):
+        print(path, out["text"][:50], "...")
+
+
 if __name__ == "__main__":
     args = parse_args()
-    transcribe_folder(
+    transcribe_all_in_one(
         input_folder=args.input_dir,
         output_folder=args.output_dir,
         model_id="openai/whisper-large-v2",
