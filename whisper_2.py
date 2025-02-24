@@ -7,6 +7,18 @@ import librosa
 from whisper_jax import FlaxWhisperPipline
 import argparse
 from datetime import datetime
+from itertools import islice
+
+
+
+def chunked_iterable(iterable, batch_size=64):
+    it = iter(iterable)
+    while True:
+        chunk = list(islice(it, batch_size))
+        if not chunk:
+            break
+        yield chunk
+
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -139,27 +151,26 @@ def transcribe_folder(
 
 def transcribe_all_in_one(input_folder: str, output_folder: str):
     """Transcribe all MP3 files in input_folder and save results to output_folder."""
-    # Create output directory
+    # Create output directory and log file
     os.makedirs(output_folder, exist_ok=True)
-    
-    # Create log file
     log_file = os.path.join(output_folder, f"transcription_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
     
-    # 1) mp3 파일 경로 리스트 만들기
+    # 1) Get list of MP3 files
     mp3_paths = [
         os.path.join(input_folder, f) 
         for f in os.listdir(input_folder) if f.endswith(".mp3")
     ]
     mp3_paths.sort()
+    print(f"Found {len(mp3_paths)} MP3 files to process")
 
-    # 2) Whisper JAX 파이프라인 초기화
+    # 2) Initialize Whisper JAX pipeline
     pipeline = FlaxWhisperPipline(
         "openai/whisper-large-v2",
         dtype=jnp.bfloat16,
-        batch_size=64,         # 한 번에 64개의 chunk를 병렬 처리        # 필요에 따라, return_timestamps=False로 하면 조금 더 빠름
+        batch_size=64,
     )
 
-    # 샤딩
+    # Configure sharding
     logical_axis_rules_dp = (
         ("batch", "data"),
         ("mlp", None),
@@ -173,27 +184,28 @@ def transcribe_all_in_one(input_folder: str, output_folder: str):
         ("num_mel", None),
         ("channels", None),
     )
-    pipeline.shard_params(num_mp_partitions=8, logical_axis_rules=logical_axis_rules_dp)
+    pipeline.shard_params(num_mp_partitions=1, logical_axis_rules=logical_axis_rules_dp)
 
-    # 3) Warm-up (컴파일)
-    dummy_file = mp3_paths[0]  # 혹은 실제로 아주 짧은 파일을 따로 준비
+    # 3) Warm-up compilation
+    print("Warming up pipeline...")
+    dummy_file = mp3_paths[0]
     _ = pipeline(dummy_file)
 
-    # 4) 한 번에 전체 파일을 파이프라인에 입력
-    start_time = time.time()
-    outputs = pipeline(mp3_paths)  
-    total_time = time.time() - start_time
-
-    print(f"Total files: {len(mp3_paths)}")
-    print(f"Total transcription time: {total_time:.2f} s")
-
+    # 4) Process files in batches
     total_audio_duration = 0
     start_time = time.time()
-    outputs = pipeline(mp3_paths)
-    total_processing_time = time.time() - start_time
+    all_outputs = []
+    
+    for i, batch in enumerate(chunked_iterable(mp3_paths, 64)):
+        print(f"Processing batch {i+1} with {len(batch)} files...")
+        batch_outputs = pipeline(batch)
+        all_outputs.extend(batch_outputs)
 
-    # Save results and log statistics
-    for mp3_path, output in zip(mp3_paths, outputs):
+    total_processing_time = time.time() - start_time
+    print(f"Processed {len(mp3_paths)} files in {total_processing_time:.2f}s")
+
+    # 5) Save results and log statistics
+    for mp3_path, output in zip(mp3_paths, all_outputs):
         mp3_file = os.path.basename(mp3_path)
         output_filename = os.path.splitext(mp3_file)[0] + ".json"
         output_path = os.path.join(output_folder, output_filename)
@@ -208,7 +220,7 @@ def transcribe_all_in_one(input_folder: str, output_folder: str):
             "text": output["text"],
             "chunks": output["chunks"],
             "audio_duration": audio_duration,
-            "processing_time": total_processing_time / len(mp3_paths),  # Approximate per-file processing time
+            "processing_time": total_processing_time / len(mp3_paths),  # Average per-file processing time
             "realtime_factor": (total_processing_time / len(mp3_paths)) / audio_duration
         }
 
@@ -220,7 +232,7 @@ def transcribe_all_in_one(input_folder: str, output_folder: str):
         log_message = (
             f"File: {mp3_file}\n"
             f"Audio Duration: {audio_duration:.2f}s\n"
-            f"Processing Time: {total_processing_time/len(mp3_paths):.2f}s\n"
+            f"Avg Processing Time: {total_processing_time/len(mp3_paths):.2f}s\n"
             f"Realtime Factor: {(total_processing_time/len(mp3_paths))/audio_duration:.2f}x\n"
             f"----------------------------------------\n"
         )
@@ -231,6 +243,7 @@ def transcribe_all_in_one(input_folder: str, output_folder: str):
     # Log final statistics
     final_stats = (
         f"\nFinal Statistics:\n"
+        f"Total Files Processed: {len(mp3_paths)}\n"
         f"Total Audio Duration: {total_audio_duration:.2f}s\n"
         f"Total Processing Time: {total_processing_time:.2f}s\n"
         f"Average Realtime Factor: {total_processing_time/total_audio_duration:.2f}x\n"
