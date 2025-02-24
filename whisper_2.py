@@ -154,7 +154,7 @@ def transcribe_all_in_one(input_folder: str, output_folder: str):
 
     # 2) Whisper JAX 파이프라인 초기화
     pipeline = FlaxWhisperPipline(
-        model_id="openai/whisper-large-v2",
+        "openai/whisper-large-v2",
         dtype=jnp.bfloat16,
         batch_size=64,         # 한 번에 64개의 chunk를 병렬 처리
         chunk_length_s=30,     # 기본 30초
