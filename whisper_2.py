@@ -212,17 +212,10 @@ def transcribe_all_in_one(input_folder: str, output_folder: str):
     )
     pipeline.shard_params(num_mp_partitions=1, logical_axis_rules=logical_axis_rules_dp)
 
-    # 3) Warm-up compilation
-    print("Warming up pipeline...")
-    dummy_file = mp3_paths[0]
-    dummy_audio = load_audio(dummy_file)
-    _ = pipeline(dummy_audio)
-
-    # 4) Process files in batches
+    # 3) Process files in batches
     total_audio_duration = 0
     start_time = time.time()
-    all_outputs = []
-    audio_durations = {}  # Store durations for each file
+    all_results = []
     
     for i, batch_paths in enumerate(chunked_iterable(mp3_paths, 32)):
         max_retries = 3
@@ -231,28 +224,46 @@ def transcribe_all_in_one(input_folder: str, output_folder: str):
         while retry_count < max_retries:
             try:
                 print(f"Processing batch {i+1} with {len(batch_paths)} files...")
-                # Load audio and store durations
-                batch_data = [load_audio(path) for path in batch_paths]
-                batch_audio = [data["array"] for data in batch_data]
                 
-                # Store durations for each file in this batch
-                for path, data in zip(batch_paths, batch_data):
-                    audio_durations[path] = data["duration"]
+                # Load and preprocess all audio files in batch
+                batch_audio_data = []
+                batch_durations = []
+                max_length = 0
                 
-                # Pad sequences to same length
-                max_length = max(audio.shape[0] for audio in batch_audio)
-                batch_audio_padded = np.array([
-                    np.pad(audio, (0, max_length - audio.shape[0])) 
-                    for audio in batch_audio
-                ])
+                for audio_path in batch_paths:
+                    audio_data = load_audio(audio_path)
+                    batch_audio_data.append(audio_data["array"])
+                    batch_durations.append(audio_data["duration"])
+                    max_length = max(max_length, len(audio_data["array"]))
                 
-                batch_inputs = [
-                    {"array": audio_padded, "sampling_rate": 44100}
-                    for audio_padded in batch_audio_padded
-                ]
+                # Pad all audio arrays to same length
+                padded_audio = []
+                for audio in batch_audio_data:
+                    padding_length = max_length - len(audio)
+                    padded = np.pad(audio, (0, padding_length))
+                    padded_audio.append(padded)
                 
-                batch_outputs = pipeline(batch_inputs)
-                all_outputs.extend(batch_outputs)
+                # Convert to numpy array and create batch input
+                batch_input = {
+                    "array": np.array(padded_audio),
+                    "sampling_rate": 16000
+                }
+                
+                # Process batch
+                batch_outputs = pipeline(batch_input, return_timestamps=True)
+                
+                # Process results
+                batch_results = []
+                for audio_path, duration, output in zip(batch_paths, batch_durations, batch_outputs["text"]):
+                    result = {
+                        "file_name": os.path.basename(audio_path),
+                        "text": output,
+                        "audio_duration": duration
+                    }
+                    batch_results.append(result)
+                    total_audio_duration += duration
+                
+                all_results.extend(batch_results)
                 break
                 
             except Exception as e:
@@ -267,38 +278,26 @@ def transcribe_all_in_one(input_folder: str, output_folder: str):
                 f.write(f"Batch {i+1}: {batch_paths}\n")
 
     total_processing_time = time.time() - start_time
-    print(f"Processed {len(mp3_paths)} files in {total_processing_time:.2f}s")
 
-    # 5) Save results and log statistics
-    for mp3_path, output in zip(mp3_paths, all_outputs):
-        mp3_file = os.path.basename(mp3_path)
-        output_filename = os.path.splitext(mp3_file)[0] + ".json"
+    # 4) Save results and log statistics
+    for result in all_results:
+        output_filename = os.path.splitext(result["file_name"])[0] + ".json"
         output_path = os.path.join(output_folder, output_filename)
-
-        # Use stored duration instead of reloading audio
-        audio_duration = audio_durations[mp3_path]
-        total_audio_duration += audio_duration
-
-        # Prepare result JSON
-        result = {
-            "file_name": mp3_file,
-            "text": output["text"],
-            "chunks": output["chunks"],
-            "audio_duration": audio_duration,
-            "processing_time": total_processing_time / len(mp3_paths),
-            "realtime_factor": (total_processing_time / len(mp3_paths)) / audio_duration
-        }
-
+        
+        # Add timing information
+        result["processing_time"] = total_processing_time / len(mp3_paths)
+        result["realtime_factor"] = result["processing_time"] / result["audio_duration"]
+        
         # Save to JSON
         with open(output_path, "w", encoding="utf-8") as f:
             json.dump(result, f, ensure_ascii=False, indent=2)
 
         # Log processing statistics
         log_message = (
-            f"File: {mp3_file}\n"
-            f"Audio Duration: {audio_duration:.2f}s\n"
-            f"Avg Processing Time: {total_processing_time/len(mp3_paths):.2f}s\n"
-            f"Realtime Factor: {(total_processing_time/len(mp3_paths))/audio_duration:.2f}x\n"
+            f"File: {result['file_name']}\n"
+            f"Audio Duration: {result['audio_duration']:.2f}s\n"
+            f"Avg Processing Time: {result['processing_time']:.2f}s\n"
+            f"Realtime Factor: {result['realtime_factor']:.2f}x\n"
             f"----------------------------------------\n"
         )
         print(log_message)
