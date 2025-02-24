@@ -19,7 +19,9 @@ def main():
     
     print(f"Loading Whisper JAX model: {model_name} ...")
     start_compile = time.time()
-    pipeline = FlaxWhisperPipline(model_id=model_name, dtype=jnp.float16)
+    pipeline = FlaxWhisperPipline("openai/whisper-large-v2", 
+                              dtype=jnp.bfloat16, 
+                              batch_size=16)
     compile_time = time.time() - start_compile
     print(f"Model loaded and compiled in {compile_time:.2f} seconds.")
     
