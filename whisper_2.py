@@ -12,8 +12,21 @@ from itertools import islice
 
 
 def load_audio(file_path):
-    """Load and preprocess audio file."""
-    audio, sr = librosa.load(file_path, sr=16000)
+    """Load and preprocess audio file.
+    
+    Args:
+        file_path: Path to audio file
+        
+    Returns:
+        Mono channel audio array at 16kHz sample rate
+    """
+    # Load audio file and convert to mono
+    audio, sr = librosa.load(file_path, sr=16000, mono=True)
+    
+    # Ensure audio is 1D (mono)
+    if len(audio.shape) > 1:
+        audio = audio.mean(axis=1)  # Convert stereo to mono by averaging channels
+        
     return audio
 
 
